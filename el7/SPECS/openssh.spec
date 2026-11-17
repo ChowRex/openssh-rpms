@@ -23,14 +23,11 @@
 # Do we want to disable building of gnome-askpass? (1=yes 0=no)
 %global no_gnome_askpass 0
 
-# Do we want smartcard support (1=yes 0=no)
-%global scard 0
-
 # Use GTK2 instead of GNOME in gnome-ssh-askpass
 %global gtk2 1
 
 # Do we want kerberos5 support (1=yes 0=no)
-%global kerberos5 0
+%global kerberos5 1
 
 # Reserve options to override askpass settings with:
 # rpm -ba|--rebuild --define 'skip_xxx 1'
@@ -41,10 +38,6 @@
 # RedHat <= 7.2 and Red Hat Advanced Server 2.1 are examples.
 # rpm -ba|--rebuild --define 'no_gtk2 1'
 %{?no_gtk2:%global gtk2 0}
-
-# Options for Smartcard support: (needs libsectok and openssl-engine)
-# rpm -ba|--rebuild --define "smartcard 1"
-%{?smartcard:%global scard 1}
 
 # Is this a build for the rescue CD (without PAM)? (1=yes 0=no)
 %global rescue 0
@@ -106,6 +99,25 @@ BuildRequires: pkgconfig
 BuildRequires: krb5-devel
 BuildRequires: krb5-libs
 %endif
+# Patch999: fix for kernel NULL pointer dereference panic in do_dup2() that
+# affects all UOS 20 systems (not just aarch64) when sshd performs a re-exec
+# with stdin/stdout/config fd dup2() before closing the existing descriptor.
+# Without this patch, certain UOS 20 kernels crash with:
+#
+#   BUG: unable to handle kernel NULL pointer dereference at 000000000000003f
+#   IP: filp_close+0x9/0x70
+#   Call Trace: do_dup2+xxx sys_dup2 entry_SYSCALL_64
+#   PID: xxx Comm: sshd
+#
+#   [<Txxxx>] Kernel panic - not syncing: Fatal exception
+#   [<Txxxx>] Kernel Offset: 0x13000000 from 0xffffffff81000000
+#   [<Txxxx>] kexec: Bye!
+#
+# The fix closes STDIN/STDOUT/REEXEC_CONFIG_PASS_FD before the corresponding
+# dup2() calls in sshd.c, so the kernel's filp_close() always operates on a
+# valid file pointer. Only applied when `uos20 1` is passed to rpmbuild
+# (compile.sh sets this from the UOS20=1 env var).
+%{?uos20:Patch999: openssh-uos20-kernel-panic-fix.patch}
 
 %package clients
 Summary: OpenSSH clients.
@@ -183,13 +195,16 @@ environment.
 %setup -q
 %endif
 
+# Apply UOS 20 kernel NULL pointer dereference fix (see Patch999 above)
+%{?uos20:%patch999 -p0}
+
 %if %{with_openssl} == 2
 # Add content below to use source code of OpenSSL
 %define openssl_dir %{_builddir}/%{name}-%{version}/openssl
 mkdir -p openssl
 tar xfz %{SOURCE3} --strip-components=1 -C openssl
 pushd openssl
-./config shared zlib -fPIC
+./config no-dgram no-tests shared zlib -fPIC
 make %{?_smp_mflags}
 popd
 %endif
@@ -210,10 +225,8 @@ export LD_LIBRARY_PATH="%{openssl_dir}"
 	--with-default-path=/usr/local/bin:/bin:/usr/bin \
 	--with-superuser-path=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin \
 	--with-privsep-path=%{_var}/empty/sshd \
-	--with-md5-passwords \
 	--mandir=%{_mandir} \
 	--with-mantype=man \
-        --with-systemd \
 	--disable-strip \
 %if %{with_openssl} == 2
 	--with-ssl-dir="%{openssl_dir}" \
@@ -224,16 +237,13 @@ export LD_LIBRARY_PATH="%{openssl_dir}"
 	--with-ssl-engine \
 %endif
 	--with-zlib \
-%if %{scard}
-	--with-smartcard \
-%endif
 %if %{rescue}
 	--without-pam \
 %else
 	--with-pam \
 %endif
 %if %{kerberos5}
-	 --with-kerberos5=$K5DIR \
+	 --with-kerberos5 \
 %endif
 
 
@@ -275,12 +285,14 @@ popd
 %install
 rm -rf $RPM_BUILD_ROOT
 mkdir -p -m755 $RPM_BUILD_ROOT%{_sysconfdir}/ssh
+mkdir -p -m755 $RPM_BUILD_ROOT%{_sysconfdir}/ssh/sshd_config.d
 mkdir -p -m755 $RPM_BUILD_ROOT%{_libexecdir}/openssh
 mkdir -p -m755 $RPM_BUILD_ROOT%{_var}/empty/sshd
 
 make install DESTDIR=$RPM_BUILD_ROOT
 # Modify sshd config file.
 cat << EOF >> $RPM_BUILD_ROOT/etc/ssh/sshd_config
+Include /etc/ssh/sshd_config.d/*.conf
 %if %{with_openssl} > 0
 PubkeyAcceptedAlgorithms +ssh-rsa
 %endif
@@ -330,9 +342,6 @@ ln -s x11-ssh-askpass $RPM_BUILD_ROOT%{_libexecdir}/openssh/ssh-askpass
 install contrib/gnome-ssh-askpass $RPM_BUILD_ROOT%{_libexecdir}/openssh/gnome-ssh-askpass
 %endif
 
-%if ! %{scard}
-	 rm -f $RPM_BUILD_ROOT/usr/share/openssh/Ssh.bin
-%endif
 
 %if ! %{no_gnome_askpass}
 install -m 755 -d $RPM_BUILD_ROOT%{_sysconfdir}/profile.d/
@@ -393,6 +402,24 @@ for keyfile in \
         chown root:root "$keyfile"
     fi
 done
+# Ensure sshd_config.d drop-in support and fill in critical auth defaults
+# when upgrading with a retained (%config(noreplace)) /etc/ssh/sshd_config
+# that lacks uncommented PermitRootLogin / PasswordAuthentication / UsePAM.
+mkdir -p -m 0755 /etc/ssh/sshd_config.d
+if [ -f /etc/ssh/sshd_config ]; then
+    if ! grep -qiE '^[[:space:]]*Include[[:space:]].*/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config 2>/dev/null; then
+        sed -i '1i\Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+    fi
+    dropin=/etc/ssh/sshd_config.d/99-elssh-defaults.conf
+    for pair in "PermitRootLogin:yes" "PasswordAuthentication:yes" "UsePAM:yes"; do
+        key=${pair%%:*}
+        val=${pair#*:}
+        if ! grep -qiE "^[[:space:]]*${key}[[:space:]]+" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null; then
+            echo "${key} ${val}" >> "$dropin"
+        fi
+    done
+    [ -f "$dropin" ] && chmod 0600 "$dropin"
+fi
 %systemd_post sshd.service sshd.socket
 
 %preun server
@@ -418,10 +445,6 @@ done
 %attr(0644,root,root) %{_mandir}/man8/ssh-keysign.8*
 %attr(0644,root,root) %{_mandir}/man8/ssh-pkcs11-helper.8*
 %attr(0644,root,root) %{_mandir}/man8/ssh-sk-helper.8*
-%endif
-%if %{scard}
-%attr(0755,root,root) %dir %{_datadir}/openssh
-%attr(0644,root,root) %{_datadir}/openssh/Ssh.bin
 %endif
 
 %files clients
@@ -457,6 +480,7 @@ done
 %attr(0644,root,root) %{_mandir}/man5/sshd_config.5*
 %attr(0644,root,root) %{_mandir}/man8/sftp-server.8*
 %attr(0755,root,root) %dir %{_sysconfdir}/ssh
+%attr(0755,root,root) %dir %{_sysconfdir}/ssh/sshd_config.d
 %attr(0600,root,root) %config(noreplace) %{_sysconfdir}/ssh/sshd_config
 %attr(0640,root,root) %config(noreplace) /etc/sysconfig/sshd
 %attr(0600,root,root) %config(noreplace) /etc/pam.d/sshd

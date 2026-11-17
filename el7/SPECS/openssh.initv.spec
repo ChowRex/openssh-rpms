@@ -23,9 +23,6 @@
 # Do we want to disable building of gnome-askpass? (1=yes 0=no)
 %global no_gnome_askpass 0
 
-# Do we want smartcard support (1=yes 0=no)
-%global scard 0
-
 # Use GTK2 instead of GNOME in gnome-ssh-askpass
 %global gtk2 1
 
@@ -57,10 +54,6 @@
 %if %{build6x}
 %global _sysconfdir /etc
 %endif
-
-# Options for Smartcard support: (needs libsectok and openssl-engine)
-# rpm -ba|--rebuild --define "smartcard 1"
-%{?smartcard:%global scard 1}
 
 # Is this a build for the rescue CD (without PAM)? (1=yes 0=no)
 %global rescue 0
@@ -223,7 +216,6 @@ export LD_LIBRARY_PATH="%{openssl_dir}"
 	--with-default-path=/usr/local/bin:/bin:/usr/bin \
 	--with-superuser-path=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin \
 	--with-privsep-path=%{_var}/empty/sshd \
-	--with-md5-passwords \
 	--mandir=%{_mandir} \
 	--with-mantype=man \
 	--disable-strip \
@@ -236,16 +228,13 @@ export LD_LIBRARY_PATH="%{openssl_dir}"
 	--with-ssl-engine \
 %endif
 	--with-zlib \
-%if %{scard}
-	--with-smartcard \
-%endif
 %if %{rescue}
 	--without-pam \
 %else
 	--with-pam \
 %endif
 %if %{kerberos5}
-	 --with-kerberos5=$K5DIR \
+	 --with-kerberos5 \
 %endif
 
 
@@ -287,6 +276,7 @@ popd
 %install
 rm -rf $RPM_BUILD_ROOT
 mkdir -p -m755 $RPM_BUILD_ROOT%{_sysconfdir}/ssh
+mkdir -p -m755 $RPM_BUILD_ROOT%{_sysconfdir}/ssh/sshd_config.d
 mkdir -p -m755 $RPM_BUILD_ROOT%{_libexecdir}/openssh
 mkdir -p -m755 $RPM_BUILD_ROOT%{_var}/empty/sshd
 
@@ -295,6 +285,7 @@ make install DESTDIR=$RPM_BUILD_ROOT
 sed -E -i 's/^#?( ?)*GSSAPIAuthentication.*$/GSSAPIAuthentication yes/' $RPM_BUILD_ROOT/etc/ssh/sshd_config
 sed -E -i 's/^#?( ?)*GSSAPICleanupCredentials.*$/GSSAPICleanupCredentials no/' $RPM_BUILD_ROOT/etc/ssh/sshd_config
 cat << EOF >> $RPM_BUILD_ROOT/etc/ssh/sshd_config
+Include /etc/ssh/sshd_config.d/*.conf
 %if %{with_openssl} > 0
 PubkeyAcceptedAlgorithms +ssh-rsa
 %endif
@@ -332,9 +323,6 @@ ln -s x11-ssh-askpass $RPM_BUILD_ROOT%{_libexecdir}/openssh/ssh-askpass
 install contrib/gnome-ssh-askpass $RPM_BUILD_ROOT%{_libexecdir}/openssh/gnome-ssh-askpass
 %endif
 
-%if ! %{scard}
-	 rm -f $RPM_BUILD_ROOT/usr/share/openssh/Ssh.bin
-%endif
 
 %if ! %{no_gnome_askpass}
 install -m 755 -d $RPM_BUILD_ROOT%{_sysconfdir}/profile.d/
@@ -381,6 +369,21 @@ fi
 	-g sshd -M -r sshd 2>/dev/null || :
 
 %post server
+mkdir -p -m 0755 /etc/ssh/sshd_config.d
+if [ -f /etc/ssh/sshd_config ]; then
+    if ! grep -qiE '^[[:space:]]*Include[[:space:]].*/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config 2>/dev/null; then
+        sed -i '1i\Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+    fi
+    dropin=/etc/ssh/sshd_config.d/99-elssh-defaults.conf
+    for pair in "PermitRootLogin:yes" "PasswordAuthentication:yes" "UsePAM:yes"; do
+        key=${pair%%:*}
+        val=${pair#*:}
+        if ! grep -qiE "^[[:space:]]*${key}[[:space:]]+" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null; then
+            echo "${key} ${val}" >> "$dropin"
+        fi
+    done
+    [ -f "$dropin" ] && chmod 0600 "$dropin"
+fi
 /sbin/chkconfig --add sshd
 
 %postun server
@@ -410,10 +413,6 @@ fi
 %attr(0644,root,root) %{_mandir}/man8/ssh-keysign.8*
 %attr(0644,root,root) %{_mandir}/man8/ssh-pkcs11-helper.8*
 %attr(0644,root,root) %{_mandir}/man8/ssh-sk-helper.8*
-%endif
-%if %{scard}
-%attr(0755,root,root) %dir %{_datadir}/openssh
-%attr(0644,root,root) %{_datadir}/openssh/Ssh.bin
 %endif
 
 %files clients
@@ -448,6 +447,7 @@ fi
 %attr(0644,root,root) %{_mandir}/man5/sshd_config.5*
 %attr(0644,root,root) %{_mandir}/man8/sftp-server.8*
 %attr(0755,root,root) %dir %{_sysconfdir}/ssh
+%attr(0755,root,root) %dir %{_sysconfdir}/ssh/sshd_config.d
 %attr(0600,root,root) %config(noreplace) %{_sysconfdir}/ssh/sshd_config
 %attr(0600,root,root) %config(noreplace) /etc/pam.d/sshd
 %attr(0755,root,root) %config /etc/rc.d/init.d/sshd

@@ -1,0 +1,252 @@
+name: Run Build Tasks and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        include:
+          - tag: aarch64_el7
+            el: "7"
+            arch: aarch64
+            artifact: rpm-el7-aarch64
+          - tag: aarch64_el8
+            el: "8"
+            arch: aarch64
+            artifact: rpm-el8-aarch64
+          - tag: aarch64_el9
+            el: "9"
+            arch: aarch64
+            artifact: rpm-el9-aarch64
+          - tag: aarch64_el8
+            el: "uos20"
+            arch: aarch64
+            uos20: "1"
+            artifact: rpm-uos20-aarch64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run pullsrc.sh
+        run: env ALL=1 ./pullsrc.sh
+
+      - name: Generate version-local.env
+        run: |
+          TAG=${{ github.ref_name }}
+          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM="b1"
+          fi
+          echo "WITH_OPENSSL=2" > version-local.env
+          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          cat version-local.env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ${{ matrix.tag }}
+        run: |
+          docker run --rm \
+            -v $(pwd):/data \
+            -e "UOS20=${{ matrix.uos20 }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: output/*.rpm
+          if-no-files-found: ignore
+
+  build-amd64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        include:
+          - tag: el9
+            el: "9"
+            arch: x86_64
+            artifact: rpm-el9-x86_64
+          - tag: el8
+            el: "8"
+            arch: x86_64
+            artifact: rpm-el8-x86_64
+          - tag: el7
+            el: "7"
+            arch: x86_64
+            artifact: rpm-el7-x86_64
+          - tag: el6
+            el: "6"
+            arch: x86_64
+            artifact: rpm-el6-x86_64
+          - tag: el8
+            el: "uos20"
+            arch: x86_64
+            uos20: "1"
+            artifact: rpm-uos20-x86_64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run pullsrc.sh
+        run: ./pullsrc.sh
+
+      - name: Generate version-local.env
+        run: |
+          TAG=${{ github.ref_name }}
+          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM="b1"
+          fi
+          echo "WITH_OPENSSL=2" > version-local.env
+          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          cat version-local.env
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ${{ matrix.tag }}
+        run: |
+          docker run --rm \
+            -v $(pwd):/data \
+            -e "UOS20=${{ matrix.uos20 }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: output/*.rpm
+          if-no-files-found: ignore
+
+  build-el5:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      matrix:
+        include:
+          - m32: "0"
+            el: "5"
+            arch: x86_64
+            artifact: rpm-el5-x86_64
+          - m32: "1"
+            el: "5"
+            arch: i686
+            artifact: rpm-el5-i686
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run pullsrc.sh
+        run: ./pullsrc.sh
+
+      - name: Generate version-local.env
+        run: |
+          TAG=${{ github.ref_name }}
+          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM="b1"
+          fi
+          echo "WITH_OPENSSL=2" > version-local.env
+          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          cat version-local.env
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run el5 with M32=${{ matrix.m32 }}
+        run: |
+          docker run --rm \
+            -v $(pwd):/data \
+            -e "M32=${{ matrix.m32 }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:el5
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: output/*.rpm
+          if-no-files-found: error
+
+  release:
+    needs: [build-arm64, build-amd64, build-el5]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifact directories:"
+          find artifacts -mindepth 1 -maxdepth 1 -type d
+
+      - name: Repackage artifacts with prefixed names
+        run: |
+          TAG=${{ github.ref_name }}
+          mkdir -p release-assets
+          for dir in artifacts/*/; do
+            artifact_name=$(basename "$dir")
+            new_name="openssh_${TAG}_${artifact_name}"
+            echo "Packaging ${artifact_name} -> ${new_name}.zip"
+            (cd "$dir" && zip -r "${GITHUB_WORKSPACE}/release-assets/${new_name}.zip" .)
+          done
+          echo "Release assets:"
+          ls -la release-assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
