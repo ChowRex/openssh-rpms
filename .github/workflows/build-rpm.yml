@@ -35,6 +35,26 @@ jobs:
             arch: aarch64
             uos20: "1"
             artifact: rpm-uos20-aarch64
+          - tag: aarch64_amzn2
+            el: "amzn2"
+            arch: aarch64
+            artifact: rpm-amzn2-aarch64
+          - tag: aarch64_amzn2023
+            el: "amzn2023"
+            arch: aarch64
+            artifact: rpm-amzn2023-aarch64
+          - tag: aarch64_oe2003sp4
+            el: "oe2003sp4"
+            arch: aarch64
+            artifact: rpm-oe2003sp4-aarch64
+          - tag: aarch64_oe2203sp4
+            el: "oe2203sp4"
+            arch: aarch64
+            artifact: rpm-oe2203sp4-aarch64
+          - tag: aarch64_oe2403sp2
+            el: "oe2403sp2"
+            arch: aarch64
+            artifact: rpm-oe2403sp2-aarch64
 
     steps:
       - name: Checkout repository
@@ -54,7 +74,7 @@ jobs:
             BUILD_NUM="b1"
           fi
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          echo "PKGREL=1" >> version-local.env
           cat version-local.env
 
       - name: Set up Docker Buildx
@@ -110,6 +130,30 @@ jobs:
             arch: x86_64
             uos20: "1"
             artifact: rpm-uos20-x86_64
+          - tag: amzn1
+            el: "amzn1"
+            arch: x86_64
+            artifact: rpm-amzn1-x86_64
+          - tag: amzn2
+            el: "amzn2"
+            arch: x86_64
+            artifact: rpm-amzn2-x86_64
+          - tag: amzn2023
+            el: "amzn2023"
+            arch: x86_64
+            artifact: rpm-amzn2023-x86_64
+          - tag: oe2003sp4
+            el: "oe2003sp4"
+            arch: x86_64
+            artifact: rpm-oe2003sp4-x86_64
+          - tag: oe2203sp4
+            el: "oe2203sp4"
+            arch: x86_64
+            artifact: rpm-oe2203sp4-x86_64
+          - tag: oe2403sp2
+            el: "oe2403sp2"
+            arch: x86_64
+            artifact: rpm-oe2403sp2-x86_64
 
     steps:
       - name: Checkout repository
@@ -129,7 +173,7 @@ jobs:
             BUILD_NUM="b1"
           fi
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          echo "PKGREL=1" >> version-local.env
           cat version-local.env
 
       - name: Log in to Container Registry
@@ -188,7 +232,7 @@ jobs:
             BUILD_NUM="b1"
           fi
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=$BUILD_NUM" >> version-local.env
+          echo "PKGREL=1" >> version-local.env
           cat version-local.env
 
       - name: Log in to Container Registry

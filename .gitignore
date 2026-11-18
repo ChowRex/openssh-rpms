@@ -1,6 +1,9 @@
 BUILD/
 output/
+nexus-upload/
+.nexus-cache/
 .*
+nexus.netrc
 *-local*
 *.orig
 *.swp

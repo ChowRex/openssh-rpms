@@ -1,0 +1,30 @@
+ARG VERSION_NUM="2023"
+FROM amazonlinux:${VERSION_NUM}
+
+ARG VERSION_NUM
+ARG BUILD_TOPDIR="el7"
+ARG EXPECTED_RPM_DIST="amzn2023"
+
+ENV BUILD_TOPDIR="${BUILD_TOPDIR}"
+ENV EXPECTED_RPM_DIST="${EXPECTED_RPM_DIST}"
+ENV RPM_DIST_OVERRIDE="${EXPECTED_RPM_DIST}"
+
+WORKDIR /data
+
+COPY ./docker/ /data/docker/
+
+RUN set -eux; \
+	if [ "$VERSION_NUM" = "1" ]; then \
+		yum install -y \
+			autoconf automake e2fsprogs-devel gcc krb5-devel make \
+			openssl-devel pam-devel perl perl-IPC-Cmd perl-Time-Piece \
+			rpm-build wget zlib-devel; \
+	else \
+		yum install -y \
+			autoconf automake e2fsprogs-devel gcc krb5-devel libnsl make \
+			openssl-devel pam-devel perl perl-IPC-Cmd perl-Time-Piece \
+			rpm-build systemd-devel wget zlib-devel; \
+	fi; \
+	yum clean all
+
+CMD ["./docker/docker_compile.sh"]
