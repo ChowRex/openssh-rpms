@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: chowrex/openssh-rpms
 
 jobs:
   build-arm64:
@@ -69,12 +68,12 @@ jobs:
       - name: Generate version-local.env
         run: |
           TAG=${{ github.ref_name }}
-          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
-          if [ -z "$BUILD_NUM" ]; then
-            BUILD_NUM="b1"
-          fi
+          case $TAG in
+            *_b[0-9]*) PKGREL=${TAG##*_} ;;
+            *) PKGREL=1 ;;
+          esac
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=1" >> version-local.env
+          echo "PKGREL=$PKGREL" >> version-local.env
           cat version-local.env
 
       - name: Set up Docker Buildx
@@ -89,10 +88,11 @@ jobs:
 
       - name: Run ${{ matrix.tag }}
         run: |
+          image_name=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           docker run --rm \
             -v $(pwd):/data \
             -e "UOS20=${{ matrix.uos20 }}" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+            ${{ env.REGISTRY }}/${image_name}:${{ matrix.tag }}
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v7
@@ -168,12 +168,12 @@ jobs:
       - name: Generate version-local.env
         run: |
           TAG=${{ github.ref_name }}
-          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
-          if [ -z "$BUILD_NUM" ]; then
-            BUILD_NUM="b1"
-          fi
+          case $TAG in
+            *_b[0-9]*) PKGREL=${TAG##*_} ;;
+            *) PKGREL=1 ;;
+          esac
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=1" >> version-local.env
+          echo "PKGREL=$PKGREL" >> version-local.env
           cat version-local.env
 
       - name: Log in to Container Registry
@@ -185,10 +185,11 @@ jobs:
 
       - name: Run ${{ matrix.tag }}
         run: |
+          image_name=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           docker run --rm \
             -v $(pwd):/data \
             -e "UOS20=${{ matrix.uos20 }}" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+            ${{ env.REGISTRY }}/${image_name}:${{ matrix.tag }}
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v7
@@ -227,12 +228,12 @@ jobs:
       - name: Generate version-local.env
         run: |
           TAG=${{ github.ref_name }}
-          BUILD_NUM=$(echo "$TAG" | grep -oE 'b[0-9]+' | tail -1)
-          if [ -z "$BUILD_NUM" ]; then
-            BUILD_NUM="b1"
-          fi
+          case $TAG in
+            *_b[0-9]*) PKGREL=${TAG##*_} ;;
+            *) PKGREL=1 ;;
+          esac
           echo "WITH_OPENSSL=2" > version-local.env
-          echo "PKGREL=1" >> version-local.env
+          echo "PKGREL=$PKGREL" >> version-local.env
           cat version-local.env
 
       - name: Log in to Container Registry
@@ -244,10 +245,11 @@ jobs:
 
       - name: Run el5 with M32=${{ matrix.m32 }}
         run: |
+          image_name=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           docker run --rm \
             -v $(pwd):/data \
             -e "M32=${{ matrix.m32 }}" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:el5
+            ${{ env.REGISTRY }}/${image_name}:el5
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v7

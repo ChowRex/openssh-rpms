@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-DEFAULT_STAGE_DIR="$SCRIPT_DIR/nexus-upload/v10.6p2_b1"
+DEFAULT_STAGE_DIR="$SCRIPT_DIR/nexus-upload/v10.6p2"
 NEXUS_BASE_URL="${NEXUS_BASE_URL:-https://nexus.goldwind.com/repository/gw-yum-hosted}"
 NETRC_FILE="${NETRC_FILE:-$SCRIPT_DIR/nexus.netrc}"
 REQUEST_DELAY_SECONDS="${REQUEST_DELAY_SECONDS:-1}"
@@ -57,11 +57,6 @@ if [[ ! -d $stage_dir ]]; then
 fi
 stage_dir=$(cd "$stage_dir" && pwd)
 
-if [[ ! -f $NETRC_FILE ]]; then
-	echo "Nexus credentials file not found: $NETRC_FILE" >&2
-	exit 1
-fi
-
 files_file=$(mktemp)
 roots_file=$(mktemp)
 trap 'rm -f "$files_file" "$roots_file" "${roots_file}.sorted"' EXIT
@@ -111,6 +106,11 @@ done <"$files_file"
 if [[ $mode == dry-run ]]; then
 	printf '\nDry run complete. No Nexus request was made.\n'
 	exit 0
+fi
+
+if [[ ! -f $NETRC_FILE ]]; then
+	echo "Nexus credentials file not found: $NETRC_FILE" >&2
+	exit 1
 fi
 
 printf '\nPreflight: verify that every destination path is unused.\n'
