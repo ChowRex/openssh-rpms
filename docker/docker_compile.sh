@@ -27,9 +27,9 @@ if ! rpm -q openssl-devel >/dev/null; then
 	WITH_OPENSSL=2
 fi
 
-openssl_major=$(rpm -q openssl --qf '%{VERSION}' | cut -d. -f1)
 if [[ -z ${WITH_OPENSSL+x} ]]; then
-	if [[ $openssl_major -ge 3 ]]; then
+	openssl_major=$(rpm -q openssl --qf '%{VERSION}' 2>/dev/null | cut -d. -f1 || true)
+	if [[ $openssl_major =~ ^[0-9]+$ && $openssl_major -ge 3 ]]; then
 		export WITH_OPENSSL=1
 	else
 		export WITH_OPENSSL=2
